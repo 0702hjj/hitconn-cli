@@ -50,19 +50,19 @@ pub fn install(paths: &StatePaths, certificate: &[u8]) -> Result<TrustGuard> {
     paths.ensure_private()?;
     let fingerprint = hex::encode_upper(Sha256::digest(certificate));
     let nickname = format!("HITSZ Connect Remote {fingerprint}");
-    let certificate_path = paths.root.join("remote-web-agent.der");
-    write_private(&certificate_path, certificate)?;
-    let install_result = install_platform_trust(&certificate_path, &nickname);
-    let _ = remove_if_present(&certificate_path);
-    install_result?;
-
     let record = CleanupRecord {
         fingerprint,
         nickname,
         installed_at_unix_seconds: now(),
     };
-    if let Err(error) = write_private(&paths.trust_cleanup, &serde_json::to_vec(&record)?) {
+    write_private(&paths.trust_cleanup, &serde_json::to_vec(&record)?)?;
+    let certificate_path = paths.root.join("remote-web-agent.der");
+    write_private(&certificate_path, certificate)?;
+    let install_result = install_platform_trust(&certificate_path, &record.nickname);
+    let _ = remove_if_present(&certificate_path);
+    if let Err(error) = install_result {
         let _ = remove_platform_trust(&record);
+        let _ = remove_if_present(&paths.trust_cleanup);
         return Err(error);
     }
     Ok(TrustGuard {
@@ -143,15 +143,27 @@ fn install_platform_trust(certificate: &Path, _nickname: &str) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 fn remove_platform_trust(record: &CleanupRecord) -> Result<()> {
-    successful(
-        Command::new("security")
-            .args(["delete-certificate", "-Z", &record.fingerprint, "-t"])
-            .arg(login_keychain()?)
-            .stdout(Stdio::null())
-            .status()
-            .context("cannot remove temporary macOS trust")?,
-        "security delete-certificate",
-    )
+    let keychain = login_keychain()?;
+    let deleted = Command::new("security")
+        .args(["delete-certificate", "-Z", &record.fingerprint, "-t"])
+        .arg(&keychain)
+        .stdout(Stdio::null())
+        .status()
+        .context("cannot remove temporary macOS trust")?;
+    if deleted.success() {
+        return Ok(());
+    }
+    let still_present = Command::new("security")
+        .args(["find-certificate", "-Z", &record.fingerprint])
+        .arg(keychain)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if still_present {
+        bail!("security delete-certificate exited with {deleted}");
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

@@ -13,15 +13,15 @@ Copy the four binaries into one directory using names of the form
 `hitconn-TARGET`, then create the compact payload:
 
 ```console
-scripts/create-manifest-payload.sh 0.2.1 \
-  https://github.com/YinMo19/hitconn-cli/releases/download/v0.2.1 \
+scripts/create-manifest-payload.sh 0.2.2 \
+  https://github.com/YinMo19/hitconn-cli/releases/download/v0.2.2 \
   release-assets manifest-payload.json
 ```
 
 The generated payload has this shape:
 
 ```json
-{"schemaVersion":1,"channel":"stable","version":"0.2.1","protocolMin":1,"protocolMax":1,"artifacts":[{"target":"x86_64-unknown-linux-gnu","url":"https://example/hitconn-x86_64-unknown-linux-gnu","size":123,"sha256":"..."}]}
+{"schemaVersion":1,"channel":"stable","version":"0.2.2","protocolMin":1,"protocolMax":1,"artifacts":[{"target":"x86_64-unknown-linux-gnu","url":"https://example/hitconn-x86_64-unknown-linux-gnu","size":123,"sha256":"..."}]}
 ```
 
 Sign the exact payload bytes:
