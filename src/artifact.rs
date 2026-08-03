@@ -180,7 +180,21 @@ async fn fetch(url: &str) -> Result<Vec<u8>> {
     {
         request = request.bearer_auth(token);
     }
-    let response = request.send().await?.error_for_status()?;
+    let response = match request.send().await {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            if let Some(bytes) = github_release_download(url)? {
+                return Ok(bytes);
+            }
+            return Err(response.error_for_status().unwrap_err().into());
+        }
+        Err(error) => {
+            if let Some(bytes) = github_release_download(url)? {
+                return Ok(bytes);
+            }
+            return Err(error.into());
+        }
+    };
     let length = response.content_length().unwrap_or(0);
     if length > MAX_ARTIFACT_BYTES {
         bail!("download exceeds the local artifact limit");
@@ -190,6 +204,59 @@ async fn fetch(url: &str) -> Result<Vec<u8>> {
         bail!("download exceeds the local artifact limit");
     }
     Ok(bytes.to_vec())
+}
+
+fn github_release_download(url: &str) -> Result<Option<Vec<u8>>> {
+    let Some(path) = url.strip_prefix("https://github.com/") else {
+        return Ok(None);
+    };
+    let parts = path.split('/').collect::<Vec<_>>();
+    let (owner, repository, release, asset) = match parts.as_slice() {
+        [owner, repository, "releases", "latest", "download", asset] => {
+            (*owner, *repository, None, *asset)
+        }
+        [owner, repository, "releases", "download", release, asset] => {
+            (*owner, *repository, Some(*release), *asset)
+        }
+        _ => return Ok(None),
+    };
+    for value in [owner, repository, asset].into_iter().chain(release) {
+        if value.is_empty()
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            bail!("GitHub release URL contains an unsupported component");
+        }
+    }
+    let mut command = Command::new("gh");
+    command.args(["release", "download"]);
+    if let Some(release) = release {
+        command.arg(release);
+    }
+    let output = command
+        .args([
+            "--repo",
+            &format!("{owner}/{repository}"),
+            "--pattern",
+            asset,
+            "--output",
+            "-",
+        ])
+        .stderr(Stdio::piped())
+        .output()
+        .context("private GitHub release requires an authenticated `gh` CLI")?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "gh could not download the private release asset: {}",
+            message.trim()
+        );
+    }
+    if output.stdout.len() as u64 > MAX_ARTIFACT_BYTES {
+        bail!("download exceeds the local artifact limit");
+    }
+    Ok(Some(output.stdout))
 }
 
 fn github_token() -> Option<String> {
