@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 
 use crate::cli::ServiceAction;
 use crate::paths::StatePaths;
@@ -44,7 +45,15 @@ pub fn logs(follow: bool, lines: u32) -> Result<()> {
     )
 }
 
-pub fn print_service_state() -> Result<()> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceState {
+    pub active: String,
+    pub enabled: String,
+    pub mode: String,
+}
+
+pub fn state() -> Result<ServiceState> {
     require_linux()?;
     let installed = Path::new(UNIT_PATH).exists();
     let active = systemctl_query("is-active").unwrap_or_else(|| "inactive".to_owned());
@@ -56,8 +65,11 @@ pub fn print_service_state() -> Result<()> {
     } else {
         "not installed"
     };
-    println!("Service: {active} ({mode}, {enabled})");
-    Ok(())
+    Ok(ServiceState {
+        active,
+        enabled,
+        mode: mode.to_owned(),
+    })
 }
 
 pub fn stop_if_running() -> Result<()> {

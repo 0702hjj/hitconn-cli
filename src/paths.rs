@@ -10,6 +10,9 @@ pub struct StatePaths {
     pub root: PathBuf,
     pub session: PathBuf,
     pub web_agent: PathBuf,
+    pub trust_cleanup: PathBuf,
+    pub config: PathBuf,
+    pub cache: PathBuf,
 }
 
 impl StatePaths {
@@ -18,18 +21,24 @@ impl StatePaths {
         if !root.is_absolute() {
             bail!("state directory must be an absolute path");
         }
+        let config = default_config_dir()?.join("config.toml");
+        let cache = default_cache_dir()?;
         Ok(Self {
             session: root.join("session.json"),
             web_agent: root.join("web-agent"),
+            trust_cleanup: root.join("trust-cleanup.json"),
             root,
+            config,
+            cache,
         })
     }
 
     pub fn ensure_private(&self) -> Result<()> {
-        fs::create_dir_all(&self.root)
-            .with_context(|| format!("cannot create {}", self.root.display()))?;
-        set_directory_mode(&self.root)?;
-        Ok(())
+        create_private_directory(&self.root)
+    }
+
+    pub fn ensure_cache(&self) -> Result<()> {
+        create_private_directory(&self.cache)
     }
 
     pub fn save_session(&self, snapshot: &AuthSessionSnapshot) -> Result<()> {
@@ -62,15 +71,10 @@ impl StatePaths {
     }
 }
 
-fn default_state_dir() -> Result<PathBuf> {
-    if let Some(value) = std::env::var_os("XDG_STATE_HOME") {
-        return Ok(PathBuf::from(value).join("hitconn"));
+pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        create_private_directory(parent)?;
     }
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".local/state/hitconn"))
-}
-
-fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
     let mut options = OpenOptions::new();
     options.create(true).truncate(true).write(true);
     #[cfg(unix)]
@@ -86,14 +90,40 @@ fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn set_directory_mode(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-    Ok(())
+fn default_state_dir() -> Result<PathBuf> {
+    if let Some(value) = std::env::var_os("XDG_STATE_HOME") {
+        return Ok(PathBuf::from(value).join("hitconn"));
+    }
+    Ok(user_home()?.join(".local/state/hitconn"))
 }
 
-#[cfg(not(unix))]
-fn set_directory_mode(_path: &Path) -> Result<()> {
+fn default_config_dir() -> Result<PathBuf> {
+    if let Some(value) = std::env::var_os("XDG_CONFIG_HOME") {
+        return Ok(PathBuf::from(value).join("hitconn"));
+    }
+    Ok(user_home()?.join(".config/hitconn"))
+}
+
+fn default_cache_dir() -> Result<PathBuf> {
+    if let Some(value) = std::env::var_os("XDG_CACHE_HOME") {
+        return Ok(PathBuf::from(value).join("hitconn"));
+    }
+    Ok(user_home()?.join(".cache/hitconn"))
+}
+
+fn user_home() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .context("user home directory is not available")
+}
+
+fn create_private_directory(path: &Path) -> Result<()> {
+    fs::create_dir_all(path).with_context(|| format!("cannot create {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
     Ok(())
 }

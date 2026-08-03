@@ -1,114 +1,147 @@
 # hitconn-cli
 
-Headless HITSZ Connect client for Linux. It reuses `hitconn-core` for browser
-authentication, validated resource policy, route generation, tunnel TLS, and
-packet authorization, while this repository owns the Linux TUN interface and
-systemd lifecycle.
+Unified HITSZ Connect command-line client. The same `hitconn` binary can run a
+Linux tunnel locally or orchestrate another Linux machine over the user's
+existing OpenSSH configuration. A target can start empty and does not need
+outbound Internet access: the orchestrator downloads, verifies, and uploads the
+matching release artifact.
 
-The command surface is intentionally platform-neutral so macOS and Windows
-service adapters can be added later. The current release supports Linux with
-systemd only.
+Linux is the current tunnel runtime. macOS and desktop Linux can act as browser
+orchestrators. Windows uses the same command and protocol design, with full
+packaging and acceptance planned after the Linux workflow is stable.
 
-## Requirements
+## Install
 
-- A systemd-based Linux distribution;
-- `iproute2` for route installation;
-- `/dev/net/tun` and root access for service operations;
-- `certutil` from `libnss3-tools` on Debian/Ubuntu or `nss-tools` on Fedora;
-- `xdg-open` or `gio` to open the system browser;
-- systemd-resolved is recommended for tunnel DNS.
+Download the artifact for the local machine from the latest release, make it
+executable on Unix, and place it on `PATH`. The repository is private for now,
+so automatic GitHub downloads reuse the local `gh auth token`; that token is
+never saved by hitconn, printed, or sent to a target.
 
-Authentication stays in the default browser. The CLI stores only the Core
-session snapshot under `${XDG_STATE_HOME:-$HOME/.local/state}/hitconn` with
-user-only permissions. It imports only the generated non-CA `127.0.0.1`
-WebAgent leaf into the current user's NSS browser databases; it never installs
-a Sangfor root CA.
-
-## Build
-
-The Core dependency is pinned to a reviewed `hitconn-core` commit. Git uses
-your existing GitHub credentials to fetch that private repository:
+Build from source with the existing Git credentials:
 
 ```console
 git clone https://github.com/YinMo19/hitconn-cli.git
 cd hitconn-cli
 cargo build --release
-```
-
-Run the Release binary directly or copy it somewhere on `PATH`:
-
-```console
 ./target/release/hitconn --help
 ```
 
-## Login and connect
+## Local Linux tunnel
 
-Run browser login as the desktop user, without `sudo`:
+Authentication always stays in the default browser:
 
 ```console
 hitconn login
-```
-
-For a one-session daemon that is not enabled at boot:
-
-```console
-hitconn service start
+hitconn connect
 hitconn status
 hitconn logs --follow
+hitconn disconnect
+```
+
+`connect` starts a transient systemd unit by default. To install the current
+binary under `/usr/local/bin`, enable it at boot, and start it immediately:
+
+```console
+hitconn connect --install
 hitconn service restart
 hitconn service stop
-```
-
-When no persistent unit is installed, `service start` creates a transient
-`hitconn.service` through `systemd-run`. The command asks for `sudo` only for
-the privileged service operation; browser state remains owned by the desktop
-user.
-
-To install the current binary under `/usr/local/bin`, enable it at boot, and
-start it immediately:
-
-```console
-hitconn service install
-```
-
-Re-running `service install` updates the installed binary and unit. Uninstall
-stops the daemon and removes `/etc/systemd/system/hitconn.service` and
-`/usr/local/bin/hitconn`, while preserving the saved browser session:
-
-```console
 hitconn service uninstall
 ```
 
-To stop the service, remove the saved session, delete the local WebAgent
-identity, and remove its browser trust entry:
+`logout` stops the service and removes saved authentication and local WebAgent
+trust. It does not uninstall the binary or persistent unit.
+
+Linux requirements are systemd, `/dev/net/tun`, `iproute2`, root access for
+service operations, and `certutil` from `libnss3-tools` or `nss-tools` for
+browser trust. `systemd-resolved` is recommended for tunnel DNS.
+
+## Remote Linux tunnel
+
+`TARGET` is any OpenSSH host syntax or alias. Existing `~/.ssh/config`,
+ProxyJump, ControlMaster, agent, hardware keys, MFA, and host-key policy are
+preserved.
 
 ```console
-hitconn logout
+hitconn remote my-server doctor
+hitconn remote my-server connect
+hitconn remote my-server status
+hitconn remote my-server logs --follow
+hitconn remote my-server disconnect
 ```
 
-## Command summary
+On the first `connect`, hitconn inspects the remote OS/architecture, downloads
+the latest signed Linux artifact locally, verifies its size and SHA-256, and
+uploads it atomically under `~/.cache/hitconn`. If authentication is needed, it
+opens the portal in the orchestrator's browser while the one-time callback
+travels over an SSH local forward into the target's Core. Passwords, cookies,
+`sidTicket`, and the WebAgent private key never leave their owning side.
+
+Remote `connect` is transient. Persistence is explicit:
+
+```console
+hitconn remote my-server connect --install
+hitconn remote my-server service restart
+hitconn remote my-server update
+```
+
+`status`, `logs`, `resources`, and `doctor` never deploy or silently upgrade.
+Use `deploy`, `connect --upgrade`, or `update` explicitly. A reviewed local
+artifact can replace release resolution:
+
+```console
+hitconn remote my-server deploy --artifact ./hitconn-linux-x86_64
+```
+
+To remove the remote unit, installed binary, artifact cache, session, and
+runtime state:
+
+```console
+hitconn remote my-server purge
+```
+
+## Commands
 
 ```text
-hitconn login
+hitconn connect [--install] [--no-open]
+hitconn disconnect
+hitconn login [--force] [--no-open]
 hitconn logout
+hitconn status [--watch] [--json]
+hitconn logs [--follow] [--lines COUNT]
+hitconn resources [--search QUERY] [--json]
+hitconn doctor [--json]
 hitconn service install|uninstall|start|restart|stop
-hitconn status
-hitconn logs [-f|--follow] [-n|--lines COUNT]
+hitconn update check|apply
+hitconn config path|show|set|unset
+hitconn completion <shell>
+
+hitconn remote TARGET connect [--install] [--upgrade] [--artifact PATH]
+hitconn remote TARGET disconnect|login|logout|status|logs|resources|doctor
+hitconn remote TARGET deploy|update [--artifact PATH]
+hitconn remote TARGET service install|uninstall|start|restart|stop
+hitconn remote TARGET purge [--yes]
 ```
 
-The daemon retries transient controller, network, and tunnel failures. An
-expired or missing session leaves the service running in
-`authentication_required` state so a later `hitconn login` can restore the
-tunnel without reinstalling the service.
+The release source is generic and configurable:
+
+```console
+hitconn config set manifest_url https://downloads.example.com/hitconn/manifest.json
+hitconn config set channel stable
+```
+
+See [docs/architecture.md](docs/architecture.md) for trust, SSH, protocol, and
+artifact boundaries.
 
 ## Development checks
 
 ```console
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
+cargo build --release
 cargo zigbuild --release --target x86_64-unknown-linux-gnu
 cargo zigbuild --release --target aarch64-unknown-linux-gnu
 ```
 
-Source licensing has not yet been selected; no rights are granted beyond the
-repository owner's explicit permissions.
+Real browser login and tunnel acceptance remain user-operated. Source licensing
+has not yet been selected; no rights are granted beyond the repository owner's
+explicit permissions.

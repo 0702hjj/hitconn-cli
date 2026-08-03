@@ -1,12 +1,12 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::service;
+use crate::service::{self, ServiceState};
 
 pub const RUNTIME_DIRECTORY: &str = "/run/hitconn";
 const STATUS_FILE: &str = "/run/hitconn/status.json";
@@ -23,6 +23,13 @@ pub struct DaemonStatus {
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StatusSnapshot {
+    service: ServiceState,
+    tunnel: Option<DaemonStatus>,
 }
 
 impl DaemonStatus {
@@ -70,31 +77,54 @@ pub fn remove() {
     let _ = fs::remove_file(STATUS_FILE);
 }
 
-pub fn print() -> Result<()> {
-    service::print_service_state()?;
-    match fs::read(STATUS_FILE) {
-        Ok(bytes) => {
-            let value: DaemonStatus =
-                serde_json::from_slice(&bytes).context("daemon status file is invalid")?;
-            println!("Tunnel: {}", value.state);
-            if let Some(address) = value.virtual_address {
-                println!("Virtual address: {address}");
-            }
-            println!("Routes: {}", value.route_count);
-            println!(
-                "Traffic: sent {} packets / {} bytes, received {} packets / {} bytes",
-                value.packets_sent, value.bytes_sent, value.packets_received, value.bytes_received
-            );
-            if let Some(message) = value.message {
-                println!("Detail: {message}");
-            }
+pub fn print(watch: bool, json: bool) -> Result<()> {
+    loop {
+        let snapshot = snapshot()?;
+        if json {
+            println!("{}", serde_json::to_string(&snapshot)?);
+        } else {
+            print_human(&snapshot);
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            println!("Tunnel: no daemon status available");
+        if !watch {
+            return Ok(());
         }
-        Err(error) => return Err(error).context("cannot read daemon status"),
+        std::thread::sleep(Duration::from_secs(2));
     }
-    Ok(())
+}
+
+fn snapshot() -> Result<StatusSnapshot> {
+    let tunnel = match fs::read(STATUS_FILE) {
+        Ok(bytes) => Some(serde_json::from_slice(&bytes).context("daemon status file is invalid")?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error).context("cannot read daemon status"),
+    };
+    Ok(StatusSnapshot {
+        service: service::state()?,
+        tunnel,
+    })
+}
+
+fn print_human(snapshot: &StatusSnapshot) {
+    println!(
+        "Service: {} ({}, {})",
+        snapshot.service.active, snapshot.service.mode, snapshot.service.enabled
+    );
+    let Some(value) = &snapshot.tunnel else {
+        println!("Tunnel: no daemon status available");
+        return;
+    };
+    println!("Tunnel: {}", value.state);
+    if let Some(address) = &value.virtual_address {
+        println!("Virtual address: {address}");
+    }
+    println!("Routes: {}", value.route_count);
+    println!(
+        "Traffic: sent {} packets / {} bytes, received {} packets / {} bytes",
+        value.packets_sent, value.bytes_sent, value.packets_received, value.bytes_received
+    );
+    if let Some(message) = &value.message {
+        println!("Detail: {message}");
+    }
 }
 
 fn now() -> u64 {

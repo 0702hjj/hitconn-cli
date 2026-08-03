@@ -7,12 +7,17 @@ use hitconn_core::web_agent::WebAgent;
 use hitconn_core::{ClientPlatform, GatewayConfig};
 
 use crate::paths::StatePaths;
+use crate::platform;
 use crate::service;
 
-pub async fn login(paths: &StatePaths) -> Result<()> {
+pub async fn login(paths: &StatePaths, force: bool, no_open: bool) -> Result<()> {
     require_linux()?;
     if unsafe { libc::geteuid() } == 0 && std::env::var_os("SUDO_USER").is_some() {
         bail!("run `hitconn login` as the desktop user, without sudo");
+    }
+    if !force && session_is_valid(paths).await? {
+        println!("Saved authentication is still valid.");
+        return Ok(());
     }
     paths.ensure_private()?;
     let mut session = AuthSession::new(gateway_config()?)?;
@@ -24,14 +29,32 @@ pub async fn login(paths: &StatePaths) -> Result<()> {
     crate::platform::linux::trust::ensure_trusted(&paths.web_agent.join("web-agent.der"))?;
 
     println!("Complete authentication in the system browser.");
-    open_browser(login_url.as_str())?;
+    platform::browser::open(login_url.as_str(), no_open)?;
     let ticket = wait_for_ticket(&agent).await?;
     agent.stop().await;
     let AuthProgress::Authenticated { username } = session.adopt_web_login_ticket(&ticket).await?;
     paths.save_session(&session.snapshot())?;
     println!("Authenticated as {username}.");
-    println!("Run `hitconn service start` to connect.");
     Ok(())
+}
+
+pub async fn session_is_valid(paths: &StatePaths) -> Result<bool> {
+    let Ok(snapshot) = paths.load_session() else {
+        return Ok(false);
+    };
+    let mut session = AuthSession::from_snapshot(gateway_config()?, snapshot)?;
+    match session.resume().await {
+        Ok(_) => Ok(true),
+        Err(error)
+            if matches!(error, hitconn_core::Error::AuthenticationExpired)
+                || error
+                    .to_string()
+                    .contains("authentication session has expired") =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error).context("could not validate the saved session"),
+    }
 }
 
 pub fn logout(paths: &StatePaths) -> Result<()> {
@@ -81,33 +104,10 @@ async fn wait_for_ticket(agent: &WebAgent) -> Result<String> {
     .context("browser login timed out after 10 minutes")?
 }
 
-#[cfg(target_os = "linux")]
-fn open_browser(url: &str) -> Result<()> {
-    use std::process::Command;
-
-    for (program, prefix) in [("xdg-open", None), ("gio", Some("open"))] {
-        let mut command = Command::new(program);
-        if let Some(argument) = prefix {
-            command.arg(argument);
-        }
-        match command.arg(url).status() {
-            Ok(status) if status.success() => return Ok(()),
-            Ok(_) | Err(_) => {}
-        }
-    }
-    println!("Open this URL in a browser on this machine:\n{url}");
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn open_browser(_url: &str) -> Result<()> {
-    bail!("browser login is currently implemented only on Linux")
-}
-
 fn require_linux() -> Result<()> {
     if cfg!(target_os = "linux") {
         Ok(())
     } else {
-        bail!("hitconn-cli currently supports Linux only")
+        bail!("a local tunnel is currently supported only on Linux; use `hitconn remote`")
     }
 }
