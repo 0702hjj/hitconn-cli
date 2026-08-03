@@ -29,4 +29,3 @@ be performed by the user on Linux; do not automate their browser or desktop.
 Commit focused changes and push the current branch to its configured upstream.
 Never include credentials, runtime state, generated WebAgent identities, or
 signed URLs.
-
