@@ -4,6 +4,8 @@ hitconn.yinmo.site {
 
 	@stable path /stable/*
 	header @stable Cache-Control "no-store"
+	@bootstrap path /install.sh
+	header @bootstrap Cache-Control "no-store"
 
 	@release path /releases/*
 	header @release Cache-Control "public, max-age=31536000, immutable"

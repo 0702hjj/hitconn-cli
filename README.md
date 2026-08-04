@@ -12,9 +12,25 @@ packaging and acceptance planned after the Linux workflow is stable.
 
 ## Install
 
-Download the artifact for the local machine from the latest release, make it
-executable on Unix, and place it on `PATH`. First-party downloads use
-`hitconn.yinmo.site`, with public GitHub Releases as the automatic fallback.
+On Linux or macOS, install the latest stable CLI with:
+
+```console
+curl -fsSL https://hitconn.yinmo.site/install.sh | sh
+```
+
+Ordinary users are installed to `~/.local/bin`; root is installed to
+`/usr/local/bin`. Override the destination without editing shell startup files:
+
+```console
+curl -fsSL https://hitconn.yinmo.site/install.sh | HITCONN_INSTALL_DIR="$HOME/bin" sh
+```
+
+The bootstrap selects the current architecture, verifies the adjacent SHA-256
+file, and atomically installs only the `hitconn` binary. It does not log in,
+install a service, or change trust. To inspect it before execution, download
+[`install.sh`](https://hitconn.yinmo.site/install.sh) first. Later CLI downloads
+use the signed release manifest, with public GitHub Releases as the automatic
+fallback.
 
 Build from source:
 

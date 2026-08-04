@@ -64,6 +64,11 @@ browser-capable orchestrators without gaining tunnel privileges locally.
 - Publish immutable versioned artifacts before atomically replacing the stable
   manifest. Verify hashes after upload, never place the release signing key on
   the download server, and keep both first-party and GitHub mirrors usable.
+- The HTTPS bootstrap installer may only select a reviewed platform artifact,
+  verify its adjacent SHA-256 file, and atomically place the CLI binary. It must
+  not authenticate, install a service, alter trust, or silently edit shell
+  startup files. The installed CLI retains signed-manifest verification for all
+  later downloads and updates.
 - Never log or print cookies, tickets, SIDs, signing keys, challenges,
   certificate bodies, or downloaded private content.
 - Keep source files below 500 lines and keep platform-specific code isolated.

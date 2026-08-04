@@ -10,8 +10,10 @@ ssh_target=$1
 version=$2
 artifact_directory=$3
 manifest=$4
+repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+installer="$repository_root/install.sh"
 
-if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ ! -f $manifest ]]; then
+if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ ! -f $manifest ]] || [[ ! -f $installer ]]; then
   echo "version or manifest is invalid" >&2
   exit 2
 fi
@@ -43,6 +45,12 @@ for target in "${targets[@]}"; do
     exit 1
   fi
   ssh "$ssh_target" mv -f "$remote_path.tmp" "$remote_path"
+  checksum=$(mktemp)
+  printf '%s  %s\n' "$local_sha" "$name" > "$checksum"
+  scp "$checksum" "$ssh_target:$remote_path.sha256.tmp"
+  rm -f -- "$checksum"
+  ssh "$ssh_target" chmod 0644 "$remote_path.sha256.tmp"
+  ssh "$ssh_target" mv -f "$remote_path.sha256.tmp" "$remote_path.sha256"
 done
 
 for target in "${targets[@]}"; do
@@ -51,8 +59,13 @@ for target in "${targets[@]}"; do
   release_path="../releases/v$version/$name"
   ssh "$ssh_target" ln -sfn "$release_path" "$stable_path.tmp"
   ssh "$ssh_target" mv -Tf "$stable_path.tmp" "$stable_path"
+  ssh "$ssh_target" ln -sfn "$release_path.sha256" "$stable_path.sha256.tmp"
+  ssh "$ssh_target" mv -Tf "$stable_path.sha256.tmp" "$stable_path.sha256"
 done
 
+scp "$installer" "$ssh_target:/srv/hitconn-downloads/install.sh.tmp"
+ssh "$ssh_target" chmod 0644 /srv/hitconn-downloads/install.sh.tmp
+ssh "$ssh_target" mv -f /srv/hitconn-downloads/install.sh.tmp /srv/hitconn-downloads/install.sh
 scp "$manifest" "$ssh_target:$stable_directory/manifest.json.tmp"
 ssh "$ssh_target" chmod 0644 "$stable_directory/manifest.json.tmp"
 ssh "$ssh_target" mv -f "$stable_directory/manifest.json.tmp" "$stable_directory/manifest.json"
