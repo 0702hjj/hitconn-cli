@@ -94,16 +94,25 @@ impl Ssh {
         }
     }
 
-    pub fn spawn_login(&self, port: u16) -> Result<Child> {
+    pub fn spawn_login(&self, port: u16, socks_port: u16) -> Result<Child> {
         let forward = format!("{port}:127.0.0.1:{port}");
+        let socks = format!("127.0.0.1:{socks_port}");
         let remote = remote_command([CURRENT_BINARY, "agent", "login", &port.to_string()]);
         Command::new("ssh")
-            .args(["-o", "ExitOnForwardFailure=yes", "-L", &forward, "--"])
+            .args([
+                "-o",
+                "ExitOnForwardFailure=yes",
+                "-D",
+                &socks,
+                "-L",
+                &forward,
+                "--",
+            ])
             .arg(&self.target)
             .arg(remote)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .context("cannot start SSH login bridge")
     }
@@ -147,4 +156,9 @@ pub fn port_is_free(port: u16) -> io::Result<bool> {
                 Err(error)
             }
         })
+}
+
+pub fn free_loopback_port() -> io::Result<u16> {
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    listener.local_addr().map(|address| address.port())
 }

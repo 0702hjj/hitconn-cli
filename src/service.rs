@@ -12,6 +12,7 @@ use crate::status;
 const SERVICE_NAME: &str = "hitconn.service";
 const UNIT_PATH: &str = "/etc/systemd/system/hitconn.service";
 const INSTALLED_BINARY: &str = "/usr/local/bin/hitconn";
+const SERVICE_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 pub fn execute(action: ServiceAction, paths: &StatePaths) -> Result<()> {
     require_linux()?;
@@ -86,7 +87,7 @@ fn install(paths: &StatePaths) -> Result<()> {
     }
     require_systemd()?;
     install_binary()?;
-    let unit = systemd_unit(&paths.root)?;
+    let unit = systemd_unit(&paths.root, &paths.home)?;
     let temporary = format!("{UNIT_PATH}.tmp");
     fs::write(&temporary, unit).context("cannot write the temporary systemd unit")?;
     fs::rename(&temporary, UNIT_PATH).context("cannot install the systemd unit")?;
@@ -130,8 +131,14 @@ fn start(paths: &StatePaths) -> Result<()> {
 
 fn restart(paths: &StatePaths) -> Result<()> {
     require_systemd()?;
-    if is_active() || Path::new(UNIT_PATH).exists() {
+    if Path::new(UNIT_PATH).exists() {
         systemctl_privileged(&["restart", SERVICE_NAME])?;
+        println!("Restarted {SERVICE_NAME}.");
+        Ok(())
+    } else if is_active() {
+        systemctl_privileged(&["stop", SERVICE_NAME])?;
+        paths.ensure_private()?;
+        start_transient(paths)?;
         println!("Restarted {SERVICE_NAME}.");
         Ok(())
     } else {
@@ -152,6 +159,10 @@ fn stop() -> Result<()> {
 
 fn start_transient(paths: &StatePaths) -> Result<()> {
     let executable = std::env::current_exe().context("cannot locate the hitconn executable")?;
+    let home = paths
+        .home
+        .to_str()
+        .context("user home directory is not valid UTF-8")?;
     let arguments = vec![
         "systemd-run".to_owned(),
         "--unit=hitconn.service".to_owned(),
@@ -163,6 +174,8 @@ fn start_transient(paths: &StatePaths) -> Result<()> {
         "--property=TimeoutStopSec=20s".to_owned(),
         "--property=RuntimeDirectory=hitconn".to_owned(),
         "--property=UMask=0077".to_owned(),
+        format!("--setenv=HOME={home}"),
+        format!("--setenv=PATH={SERVICE_PATH}"),
         "--description=HITSZ Connect headless tunnel".to_owned(),
         executable.display().to_string(),
         "--state-dir".to_owned(),
@@ -192,10 +205,14 @@ fn install_binary() -> Result<()> {
     Ok(())
 }
 
-fn systemd_unit(state_dir: &Path) -> Result<String> {
+fn systemd_unit(state_dir: &Path, home: &Path) -> Result<String> {
     let state_dir = quote_systemd(state_dir)?;
+    let home = home
+        .to_str()
+        .context("user home directory is not valid UTF-8")?;
+    let home = quote_systemd_value(&format!("HOME={home}"))?;
     Ok(format!(
-        "[Unit]\nDescription=HITSZ Connect headless tunnel\nDocumentation=https://github.com/YinMo19/hitconn-cli\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={INSTALLED_BINARY} --state-dir {state_dir} daemon run\nRestart=on-failure\nRestartSec=5s\nKillSignal=SIGINT\nTimeoutStopSec=20s\nUMask=0077\nRuntimeDirectory=hitconn\nRuntimeDirectoryMode=0755\nEnvironment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nNoNewPrivileges=true\nCapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nAmbientCapabilities=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nProtectSystem=strict\nProtectHome=read-only\nReadWritePaths=/run/hitconn\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n"
+        "[Unit]\nDescription=HITSZ Connect headless tunnel\nDocumentation=https://github.com/YinMo19/hitconn-cli\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={INSTALLED_BINARY} --state-dir {state_dir} daemon run\nRestart=on-failure\nRestartSec=5s\nKillSignal=SIGINT\nTimeoutStopSec=20s\nUMask=0077\nRuntimeDirectory=hitconn\nRuntimeDirectoryMode=0755\nEnvironment=PATH={SERVICE_PATH}\nEnvironment={home}\nNoNewPrivileges=true\nCapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nAmbientCapabilities=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nProtectSystem=strict\nProtectHome=read-only\nReadWritePaths=/run/hitconn\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n"
     ))
 }
 
@@ -203,8 +220,12 @@ fn quote_systemd(path: &Path) -> Result<String> {
     let value = path
         .to_str()
         .context("state directory is not valid UTF-8")?;
+    quote_systemd_value(value)
+}
+
+fn quote_systemd_value(value: &str) -> Result<String> {
     if value.chars().any(char::is_control) {
-        bail!("state directory contains control characters");
+        bail!("systemd value contains control characters");
     }
     Ok(format!(
         "\"{}\"",

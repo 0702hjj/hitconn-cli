@@ -6,18 +6,17 @@ existing OpenSSH configuration. A target can start empty and does not need
 outbound Internet access: the orchestrator downloads, verifies, and uploads the
 matching release artifact.
 
-Linux is the current tunnel runtime. macOS and desktop Linux can act as browser
-orchestrators. Windows uses the same command and protocol design, with full
+Linux is the current tunnel runtime. macOS and desktop Linux can orchestrate
+remote targets. Windows uses the same command and protocol design, with full
 packaging and acceptance planned after the Linux workflow is stable.
 
 ## Install
 
 Download the artifact for the local machine from the latest release, make it
-executable on Unix, and place it on `PATH`. The repository is private for now,
-so automatic GitHub downloads reuse the local `gh auth token`; that token is
-never saved by hitconn, printed, or sent to a target.
+executable on Unix, and place it on `PATH`. First-party downloads use
+`hitconn.yinmo.site`, with public GitHub Releases as the automatic fallback.
 
-Build from source with the existing Git credentials:
+Build from source:
 
 ```console
 git clone https://github.com/YinMo19/hitconn-cli.git
@@ -28,7 +27,9 @@ cargo build --release
 
 ## Local Linux tunnel
 
-Authentication always stays in the default browser:
+Terminal authentication is the default. The password and optional six-digit
+SMS code are read without echo, kept only in memory, and never passed through
+arguments, environment variables, or logs:
 
 ```console
 hitconn login
@@ -52,8 +53,9 @@ hitconn service uninstall
 trust. It does not uninstall the binary or persistent unit.
 
 Linux requirements are systemd, `/dev/net/tun`, `iproute2`, root access for
-service operations, and `certutil` from `libnss3-tools` or `nss-tools` for
-browser trust. `systemd-resolved` is recommended for tunnel DNS.
+service operations, and `systemd-resolved` when tunnel DNS should be installed.
+The explicit `hitconn login --fallback` browser path additionally needs
+`certutil` from `libnss3-tools` or `nss-tools`.
 
 ## Remote Linux tunnel
 
@@ -72,9 +74,20 @@ hitconn remote my-server disconnect
 On the first `connect`, hitconn inspects the remote OS/architecture, downloads
 the latest signed Linux artifact locally, verifies its size and SHA-256, and
 uploads it atomically under `~/.cache/hitconn`. If authentication is needed, it
-opens the portal in the orchestrator's browser while the one-time callback
-travels over an SSH local forward into the target's Core. Passwords, cookies,
-`sidTicket`, and the WebAgent private key never leave their owning side.
+allocates a remote TTY and collects the account, password, and optional SMS
+code directly on the target process. No local CLI installation is required on
+the target before the first command.
+
+`--fallback` explicitly selects remote browser authentication. It opens a
+private Chrome/Chromium/Edge/Brave profile whose controller and CAS traffic
+uses a loopback SSH SOCKS proxy. The WebAgent callback bypasses that proxy and
+travels over an SSH local forward into the target's Core. This keeps the
+browser and remote tunnel on the same network origin without changing the
+system proxy. The isolated browser identifies itself as an aTrust tray only to
+trigger the official WebAgent ticket handoff. The temporary profile and trust
+are removed after login; passwords, cookies, `sidTicket`, and the WebAgent
+private key are never printed or copied into persistent CLI state on the
+orchestrator.
 
 Remote `connect` is transient. Persistence is explicit:
 
@@ -102,9 +115,9 @@ hitconn remote my-server purge
 ## Commands
 
 ```text
-hitconn connect [--install] [--no-open]
+hitconn connect [--install] [--fallback [--no-open]]
 hitconn disconnect
-hitconn login [--force] [--no-open]
+hitconn login [--force] [--fallback [--no-open]]
 hitconn logout
 hitconn status [--watch] [--json]
 hitconn logs [--follow] [--lines COUNT]
@@ -115,8 +128,9 @@ hitconn update check|apply
 hitconn config path|show|set|unset
 hitconn completion <shell>
 
-hitconn remote TARGET connect [--install] [--upgrade] [--artifact PATH]
-hitconn remote TARGET disconnect|login|logout|status|logs|resources|doctor
+hitconn remote TARGET connect [--install] [--upgrade] [--artifact PATH] [--fallback [--no-open]]
+hitconn remote TARGET login [--force] [--fallback [--no-open]]
+hitconn remote TARGET disconnect|logout|status|logs|resources|doctor
 hitconn remote TARGET deploy|update [--artifact PATH]
 hitconn remote TARGET service install|uninstall|start|restart|stop
 hitconn remote TARGET purge [--yes]
@@ -145,5 +159,5 @@ cargo zigbuild --release --target x86_64-unknown-linux-gnu
 cargo zigbuild --release --target aarch64-unknown-linux-gnu
 ```
 
-Real browser login and tunnel acceptance remain user-operated. This project is
-licensed under GPL-3.0-only; see [LICENSE](LICENSE).
+Real credential/SMS entry and tunnel acceptance remain user-operated. This
+project is licensed under GPL-3.0-only; see [LICENSE](LICENSE).

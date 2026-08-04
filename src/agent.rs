@@ -66,7 +66,12 @@ async fn login(paths: &StatePaths, port: u16) -> Result<()> {
     })?;
     let ticket = wait_for_ticket(&agent).await?;
     agent.stop().await;
-    let AuthProgress::Authenticated { username } = session.adopt_web_login_ticket(&ticket).await?;
+    let username = match session.adopt_web_login_ticket(&ticket).await? {
+        AuthProgress::Authenticated { username } => username,
+        AuthProgress::SmsCodeRequired(_) => {
+            bail!("browser handoff unexpectedly requested terminal SMS verification")
+        }
+    };
     paths.save_session(&session.snapshot())?;
     protocol::emit(&AgentEvent::LoginComplete {
         protocol: protocol::VERSION,

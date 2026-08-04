@@ -111,14 +111,18 @@ struct RouteProbe {
 
 impl RouteManager {
     fn install(&mut self, settings: &TunnelNetworkSettings) -> Result<()> {
-        for route in &settings.excluded_routes {
-            let underlay = probe_underlay(route)?;
-            add_underlay(&underlay)?;
-            self.excluded.push(underlay);
-        }
+        let excluded = settings
+            .excluded_routes
+            .iter()
+            .map(probe_underlay)
+            .collect::<Result<Vec<_>>>()?;
         for route in &settings.included_routes {
             add_tunnel(route)?;
             self.included.insert(route.cidr()?);
+        }
+        for route in excluded {
+            add_underlay(&route)?;
+            self.excluded.push(route);
         }
         Ok(())
     }
@@ -161,6 +165,9 @@ impl RouteManager {
             delete_tunnel(cidr);
         }
         self.included = desired;
+        for route in &self.excluded {
+            add_underlay(route)?;
+        }
         Ok(())
     }
 

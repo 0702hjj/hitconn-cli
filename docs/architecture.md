@@ -4,8 +4,9 @@
 
 - the Linux runtime owns the TUN adapter, routes, DNS, authentication state,
   and systemd lifecycle;
-- a browser-capable orchestrator owns artifact acquisition, OpenSSH transport,
-  temporary user trust, and opening the local browser.
+- an orchestrator owns artifact acquisition and OpenSSH transport; only the
+  explicit browser fallback also owns temporary user trust and an isolated
+  remote-login browser profile.
 
 A desktop Linux machine can perform either role. macOS is initially an
 orchestrator only. Windows follows the same boundary when its trust adapter is
@@ -20,14 +21,26 @@ enabled; native macOS and Windows tunnels are separate future platform work.
 4. Upload to a versioned user cache and atomically switch the `current`
    symlink. The target does not need Internet access.
 5. Ask the hidden, versioned agent protocol whether the saved session is
-   usable. If not, select a WebAgent port free at both ends.
-6. Start a short-lived WebAgent identity in remote memory, forward the same
-   port with `ssh -L`, validate and temporarily trust only its `127.0.0.1`
-   non-CA leaf, then open the login URL in the local default browser.
-7. The portal sends `sidTicket` through the TLS forward directly to the remote
+   usable. If not, run the terminal login on a target-side SSH TTY. The account,
+   password, and optional SMS code go directly to the target process and never
+   enter the orchestrator's process or machine protocol.
+6. When `--fallback` is explicit, select a WebAgent port free at both ends and
+   start a short-lived WebAgent identity in remote memory. The same SSH process
+   exposes its port with `-L` and a loopback SOCKS endpoint with `-D`.
+7. Validate and temporarily trust only the WebAgent's `127.0.0.1` non-CA leaf,
+   then launch a private Chromium-family profile. Controller/CAS requests and
+   DNS use the SOCKS path so authentication has the target's network origin;
+   loopback bypass rules send the WebAgent callback into the `-L` forward. Its
+   user agent retains the installed Chromium version and adds the official
+   `SPCClientType aTrustTray` marker required for the portal handoff. Chromium's
+   local-network check is disabled only for this disposable profile; the remote
+   WebAgent still enforces its strict Origin allowlist. Machine-wide proxy
+   settings are never changed.
+8. The portal sends `sidTicket` through the TLS forward directly to the remote
    Core. The ticket, session cookies, and private key never enter local CLI
-   output. Temporary trust is removed after success, cancellation, or timeout.
-8. Start a transient service, or install and enable it only when `--install`
+   output. The browser profile and temporary trust are removed after success,
+   cancellation, or timeout.
+9. Start a transient service, or install and enable it only when `--install`
    was explicitly requested.
 
 Machine protocol stdout is versioned NDJSON. Human diagnostics and daemon logs

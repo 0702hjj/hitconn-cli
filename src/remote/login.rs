@@ -1,4 +1,6 @@
 use std::io::{BufRead, BufReader};
+use std::process::ChildStderr;
+use std::thread::{self, JoinHandle};
 
 use anyhow::{Context, Result, bail};
 use base64::Engine;
@@ -9,7 +11,7 @@ use crate::paths::StatePaths;
 use crate::platform::{browser, temporary_trust};
 use crate::protocol::AgentEvent;
 
-use super::ssh::{Ssh, port_is_free};
+use super::ssh::{Ssh, free_loopback_port, port_is_free};
 
 pub fn run(ssh: &Ssh, paths: &StatePaths, no_open: bool) -> Result<()> {
     browser::require_supported()?;
@@ -27,7 +29,27 @@ pub fn run(ssh: &Ssh, paths: &StatePaths, no_open: bool) -> Result<()> {
 }
 
 fn try_port(ssh: &Ssh, paths: &StatePaths, port: u16, no_open: bool) -> Result<()> {
-    let mut child = ssh.spawn_login(port)?;
+    let socks_port = free_loopback_port().context("cannot allocate the SSH browser proxy")?;
+    let mut child = ssh.spawn_login(port, socks_port)?;
+    let diagnostics = child.stderr.take().map(relay_ssh_diagnostics);
+    let result = try_port_with_child(&mut child, paths, port, socks_port, no_open);
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    if let Some(diagnostics) = diagnostics {
+        let _ = diagnostics.join();
+    }
+    result
+}
+
+fn try_port_with_child(
+    child: &mut std::process::Child,
+    paths: &StatePaths,
+    port: u16,
+    socks_port: u16,
+    no_open: bool,
+) -> Result<()> {
     let stdout = child
         .stdout
         .take()
@@ -52,9 +74,15 @@ fn try_port(ssh: &Ssh, paths: &StatePaths, port: u16, no_open: bool) -> Result<(
         .decode(certificate_der)
         .context("remote login certificate is not valid base64")?;
     let trust = temporary_trust::install(paths, &certificate)?;
-    browser::open(&login_url, no_open)?;
+    let browser = browser::open_through_remote(
+        &login_url,
+        no_open,
+        socks_port,
+        &paths.cache.join("browser"),
+    )?;
     let completion = read_event(&mut lines).context("remote login ended before completion")?;
     let status = child.wait()?;
+    browser.close()?;
     trust.remove()?;
     if !status.success() {
         bail!("remote login agent exited with {status}");
@@ -74,4 +102,19 @@ fn read_event(lines: &mut impl Iterator<Item = std::io::Result<String>>) -> Resu
         .next()
         .context("remote agent closed its protocol stream")??;
     serde_json::from_str(&line).context("remote agent emitted invalid protocol JSON")
+}
+
+fn relay_ssh_diagnostics(stderr: ChildStderr) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if !is_proxied_connection_refusal(&line) {
+                eprintln!("{line}");
+            }
+        }
+    })
+}
+
+fn is_proxied_connection_refusal(line: &str) -> bool {
+    line.starts_with("channel ")
+        && line.ends_with(": open failed: connect failed: Connection refused")
 }

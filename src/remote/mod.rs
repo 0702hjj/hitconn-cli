@@ -20,12 +20,17 @@ pub async fn execute(target: String, action: RemoteAction, paths: &StatePaths) -
             install,
             upgrade,
             artifact,
+            fallback,
             no_open,
-        } => connect(&ssh, paths, install, upgrade, artifact, no_open).await,
+        } => connect(&ssh, paths, install, upgrade, artifact, fallback, no_open).await,
         RemoteAction::Disconnect => current(&ssh, &["service", "stop"], true),
-        RemoteAction::Login { force, no_open } => {
+        RemoteAction::Login {
+            force,
+            fallback,
+            no_open,
+        } => {
             deploy::ensure(&ssh, paths, None, false).await?;
-            authenticate(&ssh, paths, force, no_open)
+            authenticate(&ssh, paths, force, fallback, no_open)
         }
         RemoteAction::Logout => current(&ssh, &["logout"], true),
         RemoteAction::Status { watch, json } => {
@@ -70,6 +75,7 @@ async fn connect(
     install: bool,
     upgrade: bool,
     artifact: Option<PathBuf>,
+    fallback: bool,
     no_open: bool,
 ) -> Result<()> {
     deploy::ensure(
@@ -79,12 +85,18 @@ async fn connect(
         upgrade || artifact.is_some(),
     )
     .await?;
-    authenticate(ssh, paths, false, no_open)?;
+    authenticate(ssh, paths, false, fallback, no_open)?;
     let action = if install { "install" } else { "start" };
     current(ssh, &["service", action], true)
 }
 
-fn authenticate(ssh: &Ssh, paths: &StatePaths, force: bool, no_open: bool) -> Result<()> {
+fn authenticate(
+    ssh: &Ssh,
+    paths: &StatePaths,
+    force: bool,
+    fallback: bool,
+    no_open: bool,
+) -> Result<()> {
     if !force {
         let output = ssh.current_output(&["agent", "session"])?;
         let event: AgentEvent =
@@ -99,7 +111,11 @@ fn authenticate(ssh: &Ssh, paths: &StatePaths, force: bool, no_open: bool) -> Re
             _ => bail!("remote agent returned an unexpected session response"),
         }
     }
-    login::run(ssh, paths, no_open)
+    if fallback {
+        login::run(ssh, paths, no_open)
+    } else {
+        ssh.current(&["login".to_owned(), "--force".to_owned()], true)
+    }
 }
 
 fn doctor(ssh: &Ssh, json: bool) -> Result<()> {

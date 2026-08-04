@@ -12,12 +12,24 @@ browser-capable orchestrators without gaining tunnel privileges locally.
   `TunnelNetworkSettings` and never reinterpret raw controller policy.
 - Linux owns the TUN device, application of Core-produced routes and DNS,
   systemd lifecycle, journal access, and private on-disk session storage.
-- Browser login must keep passwords and factors in the system browser. Trust
-  only the non-CA `127.0.0.1` WebAgent leaf in the current user's browser
-  stores. Never install or trust a Sangfor root CA.
-- Remote browser login uses an SSH local forward on the same official WebAgent
-  port at both ends. Its short-lived private key exists only in the remote
-  process; the orchestrator receives and validates only the leaf certificate.
+- Terminal authentication is the default on Linux. Read the account from the
+  TTY and use no-echo input for passwords and SMS codes. Zeroize secret input,
+  never put it in arguments/environment/machine protocol/logs, and do not
+  retry rejected credentials automatically. `remote login` must use `ssh -t`
+  so credentials go directly to the target process.
+- Browser login is an explicit `--fallback`. Trust only the non-CA `127.0.0.1`
+  WebAgent leaf in the current user's browser stores. Never install or trust a
+  Sangfor root CA. Remote browser fallback uses one SSH session for the
+  WebAgent local forward and a loopback SOCKS proxy. Launch a private
+  Chromium-family profile through the proxy so controller/CAS traffic has the
+  target's network origin, while
+  loopback WebAgent traffic bypasses SOCKS and enters the local forward. Keep
+  the installed Chromium version in its user agent and append the official
+  `SPCClientType aTrustTray` marker so the portal performs the WebAgent handoff.
+  Never change the machine-wide proxy. Disable Chromium's local-network check
+  only inside that disposable profile; Core's strict Origin check remains the
+  WebAgent request boundary. Its short-lived private key exists only in the
+  remote process; the orchestrator receives and validates only the leaf.
 - Use the system OpenSSH client and preserve the user's host-key policy,
   aliases, ProxyJump, agent, hardware keys, and MFA. Never disable host-key
   checking, collect a sudo password, or copy local credentials to a target.

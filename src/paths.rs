@@ -7,6 +7,7 @@ use hitconn_core::auth::AuthSessionSnapshot;
 
 #[derive(Debug, Clone)]
 pub struct StatePaths {
+    pub home: PathBuf,
     pub root: PathBuf,
     pub session: PathBuf,
     pub web_agent: PathBuf,
@@ -17,13 +18,15 @@ pub struct StatePaths {
 
 impl StatePaths {
     pub fn resolve(explicit: Option<PathBuf>) -> Result<Self> {
-        let root = explicit.map_or_else(default_state_dir, Ok)?;
+        let home = user_home()?;
+        let root = explicit.map_or_else(|| default_state_dir(&home), Ok)?;
         if !root.is_absolute() {
             bail!("state directory must be an absolute path");
         }
-        let config = default_config_dir()?.join("config.toml");
-        let cache = default_cache_dir()?;
+        let config = default_config_dir(&home).join("config.toml");
+        let cache = default_cache_dir(&home);
         Ok(Self {
+            home,
             session: root.join("session.json"),
             web_agent: root.join("web-agent"),
             trust_cleanup: root.join("trust-cleanup.json"),
@@ -90,25 +93,25 @@ pub fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn default_state_dir() -> Result<PathBuf> {
+fn default_state_dir(home: &Path) -> Result<PathBuf> {
     if let Some(value) = std::env::var_os("XDG_STATE_HOME") {
         return Ok(PathBuf::from(value).join("hitconn"));
     }
-    Ok(user_home()?.join(".local/state/hitconn"))
+    Ok(home.join(".local/state/hitconn"))
 }
 
-fn default_config_dir() -> Result<PathBuf> {
+fn default_config_dir(home: &Path) -> PathBuf {
     if let Some(value) = std::env::var_os("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(value).join("hitconn"));
+        return PathBuf::from(value).join("hitconn");
     }
-    Ok(user_home()?.join(".config/hitconn"))
+    home.join(".config/hitconn")
 }
 
-fn default_cache_dir() -> Result<PathBuf> {
+fn default_cache_dir(home: &Path) -> PathBuf {
     if let Some(value) = std::env::var_os("XDG_CACHE_HOME") {
-        return Ok(PathBuf::from(value).join("hitconn"));
+        return PathBuf::from(value).join("hitconn");
     }
-    Ok(user_home()?.join(".cache/hitconn"))
+    home.join(".cache/hitconn")
 }
 
 fn user_home() -> Result<PathBuf> {

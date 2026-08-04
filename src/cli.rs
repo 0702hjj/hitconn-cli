@@ -24,19 +24,25 @@ pub enum Command {
         /// Install and enable the service instead of using a transient unit.
         #[arg(long)]
         install: bool,
-        /// Print the login URL instead of opening a browser.
+        /// Use the isolated browser flow instead of terminal credentials.
         #[arg(long)]
+        fallback: bool,
+        /// Print the login URL instead of opening a browser.
+        #[arg(long, requires = "fallback")]
         no_open: bool,
     },
     /// Stop the local tunnel while preserving authentication.
     Disconnect,
-    /// Authenticate in the system default browser.
+    /// Authenticate using terminal credentials, or the browser fallback.
     Login {
         /// Authenticate even when the saved session is still valid.
         #[arg(long)]
         force: bool,
-        /// Print the login URL instead of opening a browser.
+        /// Use the isolated browser flow instead of terminal credentials.
         #[arg(long)]
+        fallback: bool,
+        /// Print the login URL instead of opening a browser.
+        #[arg(long, requires = "fallback")]
         no_open: bool,
     },
     /// Stop the tunnel and remove saved authentication and browser trust.
@@ -157,19 +163,25 @@ pub enum RemoteAction {
         /// Use a reviewed local target artifact instead of the release manifest.
         #[arg(long)]
         artifact: Option<PathBuf>,
-        /// Print the login URL instead of opening a browser.
+        /// Use the orchestrator's isolated browser instead of target-side terminal login.
         #[arg(long)]
+        fallback: bool,
+        /// Print the login URL instead of opening a browser.
+        #[arg(long, requires = "fallback")]
         no_open: bool,
     },
     /// Stop the target tunnel while preserving authentication.
     Disconnect,
-    /// Run browser authentication for the target.
+    /// Authenticate on the target terminal, or use the browser fallback.
     Login {
         /// Authenticate even when the remote session is valid.
         #[arg(long)]
         force: bool,
-        /// Print the login URL instead of opening a browser.
+        /// Use the orchestrator's isolated browser instead of target-side terminal login.
         #[arg(long)]
+        fallback: bool,
+        /// Print the login URL instead of opening a browser.
+        #[arg(long, requires = "fallback")]
         no_open: bool,
     },
     /// Stop the target and remove its saved authentication.
