@@ -13,15 +13,16 @@ Copy the four binaries into one directory using names of the form
 `hitconn-TARGET`, then create the compact payload:
 
 ```console
-scripts/create-manifest-payload.sh 0.2.2 \
-  https://github.com/YinMo19/hitconn-cli/releases/download/v0.2.2 \
+scripts/create-manifest-payload.sh 0.3.0 \
+  https://hitconn.yinmo.site/releases/v0.3.0 \
+  https://github.com/YinMo19/hitconn-cli/releases/download/v0.3.0 \
   release-assets manifest-payload.json
 ```
 
 The generated payload has this shape:
 
 ```json
-{"schemaVersion":1,"channel":"stable","version":"0.2.2","protocolMin":1,"protocolMax":1,"artifacts":[{"target":"x86_64-unknown-linux-gnu","url":"https://example/hitconn-x86_64-unknown-linux-gnu","size":123,"sha256":"..."}]}
+{"schemaVersion":1,"channel":"stable","version":"0.3.0","protocolMin":1,"protocolMax":1,"artifacts":[{"target":"x86_64-unknown-linux-gnu","url":"https://primary.example/hitconn-x86_64-unknown-linux-gnu","mirrors":["https://mirror.example/hitconn-x86_64-unknown-linux-gnu"],"size":123,"sha256":"..."}]}
 ```
 
 Sign the exact payload bytes:
@@ -31,8 +32,15 @@ HITCONN_SIGNING_KEY=/secure/path/signing-key.pem \
   scripts/sign-manifest.sh manifest-payload.json manifest.json
 ```
 
-Upload `manifest.json` and every named artifact to the release location. The
-artifact URLs may use GitHub Releases now or a first-party HTTPS endpoint later.
-Test `hitconn update check` and a clean `hitconn remote TARGET deploy` before
-marking the release current. Never upload the payload private key, auth token,
-session state, or generated WebAgent identity.
+Upload the four artifacts to both immutable release locations, then publish the
+same signed `manifest.json` to GitHub and replace the first-party stable
+manifest last:
+
+```console
+scripts/publish-server.sh arcapi 0.3.0 release-assets manifest.json
+```
+
+Test `hitconn update check`, each direct artifact URL, and a clean
+`hitconn remote TARGET deploy` before marking the release current. Never upload
+the payload private key, auth token, session state, or generated WebAgent
+identity.

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "usage: $0 VERSION BASE_URL ARTIFACT_DIRECTORY OUTPUT_JSON" >&2
+if [[ $# -ne 5 ]]; then
+  echo "usage: $0 VERSION PRIMARY_BASE_URL MIRROR_BASE_URL ARTIFACT_DIRECTORY OUTPUT_JSON" >&2
   exit 2
 fi
 
 version=$1
 base_url=${2%/}
-artifact_directory=$3
-output=$4
+mirror_base_url=${3%/}
+artifact_directory=$4
+output=$5
 targets=(
   aarch64-apple-darwin
   x86_64-apple-darwin
@@ -34,9 +35,10 @@ for target in "${targets[@]}"; do
   artifact=$(jq -cn \
     --arg target "$target" \
     --arg url "$base_url/$name" \
+    --arg mirror "$mirror_base_url/$name" \
     --argjson size "$size" \
     --arg sha256 "$sha256" \
-    '{target:$target,url:$url,size:$size,sha256:$sha256}')
+    '{target:$target,url:$url,mirrors:[$mirror],size:$size,sha256:$sha256}')
   artifacts=$(jq -cn --argjson current "$artifacts" --argjson item "$artifact" \
     '$current + [$item]')
 done

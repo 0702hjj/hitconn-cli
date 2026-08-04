@@ -1,10 +1,11 @@
 [package]
 name = "hitconn-cli"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95"
 description = "Headless HITSZ Connect client and service manager"
 repository = "https://github.com/YinMo19/hitconn-cli"
+license = "GPL-3.0-only"
 
 [[bin]]
 name = "hitconn"

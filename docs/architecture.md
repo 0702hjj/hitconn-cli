@@ -35,8 +35,9 @@ use stderr. Read-only remote commands never deploy or silently update a target.
 
 ## Release manifest
 
-The source URL is configurable. The default may point to GitHub Releases while
-private; a future first-party download endpoint can serve the same envelope.
+The source URLs are configurable. `hitconn.yinmo.site` serves the primary
+manifest and immutable artifacts; GitHub Releases serves an automatic fallback
+manifest and per-artifact mirror using the same signed envelope.
 The envelope contains base64-encoded signed payload bytes and an Ed25519
 signature. The payload names each target artifact, URL, byte size, and SHA-256
 digest, plus compatible agent protocol versions. Download credentials remain

@@ -23,8 +23,9 @@ browser-capable orchestrators without gaining tunnel privileges locally.
   checking, collect a sudo password, or copy local credentials to a target.
 - A target does not need outbound Internet access. Download and verify release
   artifacts on the orchestrator, then upload atomically over SSH. Keep the
-  source configurable through a signed generic manifest; GitHub is a default,
-  not a protocol dependency, and GitHub tokens never leave the orchestrator.
+  source configurable through a signed generic manifest. The first-party
+  `hitconn.yinmo.site` service is primary and GitHub Releases is the automatic
+  fallback; GitHub tokens never leave the orchestrator.
 - Machine-facing commands use versioned NDJSON on stdout and diagnostics on
   stderr. They are hidden, bounded operations rather than an arbitrary command
   channel. Never emit cookies, SIDs, tickets, private keys, or certificate
@@ -33,6 +34,9 @@ browser-capable orchestrators without gaining tunnel privileges locally.
   upgrade. `remote connect` is transient by default; persistence requires
   `--install`. Active services upgrade only through explicit update commands,
   with a retained previous artifact and rollback on failed activation.
+- Publish immutable versioned artifacts before atomically replacing the stable
+  manifest. Verify hashes after upload, never place the release signing key on
+  the download server, and keep both first-party and GitHub mirrors usable.
 - Never log or print cookies, tickets, SIDs, signing keys, challenges,
   certificate bodies, or downloaded private content.
 - Keep source files below 500 lines and keep platform-specific code isolated.

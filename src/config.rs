@@ -6,13 +6,15 @@ use serde::{Deserialize, Serialize};
 use crate::cli::ConfigAction;
 use crate::paths::{StatePaths, write_private};
 
-pub const DEFAULT_MANIFEST_URL: &str =
+pub const DEFAULT_MANIFEST_URL: &str = "https://hitconn.yinmo.site/stable/manifest.json";
+pub const DEFAULT_FALLBACK_MANIFEST_URL: &str =
     "https://github.com/YinMo19/hitconn-cli/releases/latest/download/manifest.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub manifest_url: String,
+    pub fallback_manifest_url: String,
     pub channel: String,
 }
 
@@ -20,6 +22,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             manifest_url: DEFAULT_MANIFEST_URL.to_owned(),
+            fallback_manifest_url: DEFAULT_FALLBACK_MANIFEST_URL.to_owned(),
             channel: "stable".to_owned(),
         }
     }
@@ -57,6 +60,7 @@ pub fn execute(action: ConfigAction, paths: &StatePaths) -> Result<()> {
             let defaults = Settings::default();
             let value = match key.as_str() {
                 "manifest_url" => defaults.manifest_url,
+                "fallback_manifest_url" => defaults.fallback_manifest_url,
                 "channel" => defaults.channel,
                 _ => bail!("unsupported configuration key {key:?}"),
             };
@@ -74,13 +78,23 @@ fn set(settings: &mut Settings, key: &str, value: String) -> Result<()> {
     }
     match key {
         "manifest_url" => {
-            if !(value.starts_with("https://") || value.starts_with("file://")) {
-                bail!("manifest_url must use https:// or file://");
-            }
+            validate_url(&value, "manifest_url")?;
             settings.manifest_url = value;
+        }
+        "fallback_manifest_url" => {
+            validate_url(&value, "fallback_manifest_url")?;
+            settings.fallback_manifest_url = value;
         }
         "channel" => settings.channel = value,
         _ => bail!("unsupported configuration key {key:?}"),
     }
     Ok(())
+}
+
+fn validate_url(value: &str, key: &str) -> Result<()> {
+    if value.starts_with("https://") || value.starts_with("file://") {
+        Ok(())
+    } else {
+        bail!("{key} must use https:// or file://")
+    }
 }

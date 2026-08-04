@@ -122,10 +122,13 @@ hitconn remote TARGET service install|uninstall|start|restart|stop
 hitconn remote TARGET purge [--yes]
 ```
 
-The release source is generic and configurable:
+The signed release source is generic and configurable. By default,
+`https://hitconn.yinmo.site` is primary and GitHub Releases is the automatic
+fallback:
 
 ```console
 hitconn config set manifest_url https://downloads.example.com/hitconn/manifest.json
+hitconn config set fallback_manifest_url https://mirror.example.com/manifest.json
 hitconn config set channel stable
 ```
 
@@ -142,6 +145,5 @@ cargo zigbuild --release --target x86_64-unknown-linux-gnu
 cargo zigbuild --release --target aarch64-unknown-linux-gnu
 ```
 
-Real browser login and tunnel acceptance remain user-operated. Source licensing
-has not yet been selected; no rights are granted beyond the repository owner's
-explicit permissions.
+Real browser login and tunnel acceptance remain user-operated. This project is
+licensed under GPL-3.0-only; see [LICENSE](LICENSE).

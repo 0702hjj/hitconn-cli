@@ -42,6 +42,8 @@ struct ManifestPayload {
 struct ManifestArtifact {
     target: String,
     url: String,
+    #[serde(default)]
+    mirrors: Vec<String>,
     size: u64,
     sha256: String,
 }
@@ -63,7 +65,11 @@ pub async fn resolve(
         return resolve_override(path, target);
     }
     let settings = Settings::load(paths)?;
-    let envelope = fetch(&settings.manifest_url).await?;
+    let envelope = fetch_first([
+        settings.manifest_url.as_str(),
+        settings.fallback_manifest_url.as_str(),
+    ])
+    .await?;
     let payload = verify_manifest(&envelope)?;
     if payload.schema_version != 1 || payload.channel != settings.channel {
         bail!("release manifest schema or channel is incompatible");
@@ -95,7 +101,10 @@ pub async fn resolve(
             sha256: artifact.sha256,
         });
     }
-    let bytes = fetch(&artifact.url).await?;
+    let bytes = fetch_first(
+        std::iter::once(artifact.url.as_str()).chain(artifact.mirrors.iter().map(String::as_str)),
+    )
+    .await?;
     if bytes.len() as u64 != artifact.size {
         bail!("downloaded artifact size does not match the signed manifest");
     }
@@ -163,10 +172,30 @@ fn validate_metadata(artifact: &ManifestArtifact) -> Result<()> {
     {
         bail!("signed artifact SHA-256 is invalid");
     }
-    if !(artifact.url.starts_with("https://") || artifact.url.starts_with("file://")) {
-        bail!("signed artifact URL must use https:// or file://");
+    if artifact.mirrors.len() > 4 {
+        bail!("signed artifact has too many mirrors");
+    }
+    if std::iter::once(&artifact.url)
+        .chain(&artifact.mirrors)
+        .any(|url| !(url.starts_with("https://") || url.starts_with("file://")))
+    {
+        bail!("signed artifact URLs must use https:// or file://");
     }
     Ok(())
+}
+
+async fn fetch_first<'a>(urls: impl IntoIterator<Item = &'a str>) -> Result<Vec<u8>> {
+    let mut attempted = 0_usize;
+    for url in urls {
+        attempted += 1;
+        if let Ok(bytes) = fetch(url).await {
+            return Ok(bytes);
+        }
+    }
+    if attempted == 0 {
+        bail!("no download source is configured");
+    }
+    bail!("download failed from all {attempted} configured sources")
 }
 
 async fn fetch(url: &str) -> Result<Vec<u8>> {

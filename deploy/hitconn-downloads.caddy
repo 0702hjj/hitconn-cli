@@ -1,0 +1,19 @@
+hitconn.yinmo.site {
+	root * /srv/hitconn-downloads
+	encode zstd gzip
+
+	@stable path /stable/*
+	header @stable Cache-Control "no-store"
+
+	@release path /releases/*
+	header @release Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Content-Security-Policy "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		-Server
+	}
+
+	file_server
+}
