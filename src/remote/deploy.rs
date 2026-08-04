@@ -59,10 +59,8 @@ pub async fn ensure(
 }
 
 pub fn stage(ssh: &Ssh, artifact: &ResolvedArtifact) -> Result<()> {
-    let directory = format!(
-        ".cache/hitconn/bin/{}/{}",
-        artifact.version, artifact.target
-    );
+    let link_target = format!("bin/{}/{}", artifact.version, artifact.target);
+    let directory = format!(".cache/hitconn/{link_target}");
     let destination = format!("{directory}/hitconn");
     let temporary = format!("{destination}.tmp");
     ssh.output(&["mkdir", "-p", &directory])?;
@@ -77,7 +75,7 @@ pub fn stage(ssh: &Ssh, artifact: &ResolvedArtifact) -> Result<()> {
         bail!("uploaded artifact SHA-256 does not match the verified local artifact");
     }
     ssh.output(&["mv", "-f", &temporary, &destination])?;
-    ssh.output(&["ln", "-sfn", &directory, ".cache/hitconn/current"])?;
+    ssh.output(&["ln", "-sfn", &link_target, ".cache/hitconn/current"])?;
     verify_handshake(ssh)?;
     println!(
         "Deployed hitconn {} for {}.",
@@ -103,7 +101,7 @@ pub fn verify_handshake(ssh: &Ssh) -> Result<()> {
 pub fn previous_link(ssh: &Ssh) -> Option<String> {
     ssh.output_text(&["readlink", ".cache/hitconn/current"])
         .ok()
-        .filter(|value| value.starts_with(".cache/hitconn/bin/"))
+        .filter(|value| value.starts_with("bin/") && !value.split('/').any(|part| part == ".."))
 }
 
 pub fn restore_link(ssh: &Ssh, previous: &str) -> Result<()> {
