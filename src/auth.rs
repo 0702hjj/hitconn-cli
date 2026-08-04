@@ -3,9 +3,9 @@ use std::io::{self, IsTerminal, Write};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use hitconn_core::GatewayConfig;
 use hitconn_core::auth::{AuthProgress, AuthSession, PasswordLoginProgress, SmsChallenge};
 use hitconn_core::web_agent::WebAgent;
-use hitconn_core::{ClientPlatform, GatewayConfig};
 use zeroize::Zeroizing;
 
 use crate::paths::StatePaths;
@@ -196,10 +196,7 @@ pub fn logout(paths: &StatePaths) -> Result<()> {
 }
 
 pub fn gateway_config() -> Result<GatewayConfig> {
-    Ok(GatewayConfig::new(
-        GatewayConfig::HITSZ_GATEWAY.parse()?,
-        ClientPlatform::Linux,
-    )?)
+    Ok(GatewayConfig::hitsz())
 }
 
 async fn wait_for_ticket(agent: &WebAgent) -> Result<String> {

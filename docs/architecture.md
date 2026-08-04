@@ -12,6 +12,21 @@ A desktop Linux machine can perform either role. macOS is initially an
 orchestrator only. Windows follows the same boundary when its trust adapter is
 enabled; native macOS and Windows tunnels are separate future platform work.
 
+HITSZ currently has no usable Linux controller profile. The Linux runtime uses
+Core's reviewed `GatewayConfig::hitsz()` macOS aTrust identity for control-plane
+requests while retaining a native Linux TUN data plane. Sending the literal
+`platform=Linux` is not a supported approximation: it creates a valid login but
+the controller assigns a session that cannot reach every authorized campus
+resource.
+
+Core also normalizes the controller's domain address arrays into bounded DNS
+overrides. The Linux adapter exposes them through a loopback-only stub, answers
+authorized exact or wildcard names with only the issued IPv4 addresses, and
+forwards unmatched names to the tunnel DNS. Resolver integration prefers
+systemd-resolved and falls back to resolvconf. Stopping the adapter removes the
+registration before deleting routes, so public DNS can neither widen policy nor
+remain captured after disconnect.
+
 ## Remote connection flow
 
 1. Resolve the SSH target through the user's existing OpenSSH configuration.

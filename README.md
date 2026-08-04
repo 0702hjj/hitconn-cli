@@ -53,9 +53,20 @@ hitconn service uninstall
 trust. It does not uninstall the binary or persistent unit.
 
 Linux requirements are systemd, `/dev/net/tun`, `iproute2`, root access for
-service operations, and `systemd-resolved` when tunnel DNS should be installed.
+service operations, and either systemd-resolved or resolvconf for tunnel DNS.
 The explicit `hitconn login --fallback` browser path additionally needs
 `certutil` from `libnss3-tools` or `nss-tools`.
+
+While connected, a loopback-only DNS stub serves the controller's bounded
+address mappings for authorized exact and wildcard domains. Other names are
+forwarded to the controller-provided tunnel DNS. The resolver registration is
+removed when the tunnel stops; ordinary DNS answers never create VPN routes or
+expand Core's authorization policy.
+
+The Linux runtime uses the reviewed official HITSZ macOS aTrust identity for
+controller requests because HITSZ does not publish a usable Linux client
+profile. Authentication and tunneling still run entirely on the Linux host;
+this compatibility setting affects only the controller's client classification.
 
 ## Remote Linux tunnel
 
@@ -99,6 +110,17 @@ Remote `connect` is transient. Persistence is explicit:
 hitconn remote my-server connect --install
 hitconn remote my-server service restart
 hitconn remote my-server update
+```
+
+After `connect --install`, the same binary is available on the target as
+`/usr/local/bin/hitconn`. You can then SSH to the machine and operate it without
+the orchestrator, including a completely target-local authentication flow:
+
+```console
+ssh my-server
+hitconn login
+hitconn service start
+hitconn status
 ```
 
 `status`, `logs`, `resources`, and `doctor` never deploy or silently upgrade.

@@ -92,7 +92,8 @@ fn install(paths: &StatePaths) -> Result<()> {
     fs::write(&temporary, unit).context("cannot write the temporary systemd unit")?;
     fs::rename(&temporary, UNIT_PATH).context("cannot install the systemd unit")?;
     systemctl_root(&["daemon-reload"])?;
-    systemctl_root(&["enable", "--now", SERVICE_NAME])?;
+    systemctl_root(&["enable", SERVICE_NAME])?;
+    systemctl_root(&["restart", SERVICE_NAME])?;
     println!("Installed and enabled {SERVICE_NAME}.");
     Ok(())
 }
@@ -212,7 +213,7 @@ fn systemd_unit(state_dir: &Path, home: &Path) -> Result<String> {
         .context("user home directory is not valid UTF-8")?;
     let home = quote_systemd_value(&format!("HOME={home}"))?;
     Ok(format!(
-        "[Unit]\nDescription=HITSZ Connect headless tunnel\nDocumentation=https://github.com/YinMo19/hitconn-cli\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={INSTALLED_BINARY} --state-dir {state_dir} daemon run\nRestart=on-failure\nRestartSec=5s\nKillSignal=SIGINT\nTimeoutStopSec=20s\nUMask=0077\nRuntimeDirectory=hitconn\nRuntimeDirectoryMode=0755\nEnvironment=PATH={SERVICE_PATH}\nEnvironment={home}\nNoNewPrivileges=true\nCapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nAmbientCapabilities=CAP_NET_ADMIN CAP_DAC_READ_SEARCH\nProtectSystem=strict\nProtectHome=read-only\nReadWritePaths=/run/hitconn\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n"
+        "[Unit]\nDescription=HITSZ Connect headless tunnel\nDocumentation=https://github.com/YinMo19/hitconn-cli\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={INSTALLED_BINARY} --state-dir {state_dir} daemon run\nExecStopPost=-resolvectl revert hitconn0\nExecStopPost=-resolvconf -d tun.hitconn0\nRestart=on-failure\nRestartSec=5s\nKillSignal=SIGINT\nTimeoutStopSec=20s\nUMask=0077\nRuntimeDirectory=hitconn\nRuntimeDirectoryMode=0755\nEnvironment=PATH={SERVICE_PATH}\nEnvironment={home}\nNoNewPrivileges=true\nCapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_DAC_READ_SEARCH\nAmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_DAC_READ_SEARCH\nProtectSystem=strict\nProtectHome=read-only\nReadWritePaths=/run/hitconn -/run/resolvconf\nPrivateTmp=true\n\n[Install]\nWantedBy=multi-user.target\n"
     ))
 }
 

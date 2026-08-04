@@ -948,7 +948,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hitconn-cli"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64 0.23.0",
@@ -975,7 +975,7 @@ dependencies = [
 [[package]]
 name = "hitconn-core"
 version = "0.1.1"
-source = "git+https://github.com/YinMo19/hitconn-core.git?rev=62e2fee58d3d1d070d76881aa514d5b1bbf02b50#62e2fee58d3d1d070d76881aa514d5b1bbf02b50"
+source = "git+https://github.com/YinMo19/hitconn-core.git?rev=e542d17d8644675dea06222eb6ee31f7489cd5ba#e542d17d8644675dea06222eb6ee31f7489cd5ba"
 dependencies = [
  "aes",
  "base64 0.23.0",

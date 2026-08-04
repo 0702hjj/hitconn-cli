@@ -10,8 +10,17 @@ browser-capable orchestrators without gaining tunnel privileges locally.
 - Core owns authentication protocol, cookies/CSRF, resource validation, route
   generation, tunnel authorization, and TLS identity. The CLI must consume
   `TunnelNetworkSettings` and never reinterpret raw controller policy.
+- HITSZ does not expose a usable Linux control-plane profile. Linux tunnel
+  runtimes must use `GatewayConfig::hitsz()` and its reviewed official macOS
+  client identity; sending `platform=Linux` authenticates but produces a
+  controller session that cannot reach all authorized campus resources.
 - Linux owns the TUN device, application of Core-produced routes and DNS,
   systemd lifecycle, journal access, and private on-disk session storage.
+- Linux DNS must serve Core's bounded `dnsOverrides` from a loopback-only stub
+  and forward every unmatched name to the controller-provided tunnel DNS.
+  Never derive or expand tunnel authorization from public DNS answers. Remove
+  resolver registration whenever the adapter stops or policy application
+  fails; support both systemd-resolved and resolvconf-managed hosts.
 - Remote authentication first hands off a one-time `sidTicket` from an
   authenticated local CLI session. On macOS, the existing HITSZ Connect
   Keychain session is also a permitted source. Send only the bounded ticket on

@@ -1,3 +1,4 @@
+mod dns;
 pub mod trust;
 
 use std::collections::BTreeSet;
@@ -10,13 +11,15 @@ use hitconn_core::{Ipv4Route, TunnelNetworkSettings};
 use serde::Deserialize;
 use tun_rs::{AsyncDevice, DeviceBuilder, Layer};
 
+use self::dns::DnsManager;
+
 const INTERFACE_NAME: &str = "hitconn0";
 const ROUTE_METRIC: &str = "42760";
 
 pub struct NetworkAdapter {
     device: Arc<AsyncDevice>,
     routes: RouteManager,
-    dns_configured: bool,
+    dns_manager: Option<DnsManager>,
 }
 
 impl NetworkAdapter {
@@ -38,11 +41,17 @@ impl NetworkAdapter {
             routes.cleanup();
             return Err(error);
         }
-        let dns_configured = configure_dns(&settings.dns_servers);
+        let dns_manager = match DnsManager::start(settings) {
+            Ok(manager) => manager,
+            Err(error) => {
+                routes.cleanup();
+                return Err(error);
+            }
+        };
         Ok(Self {
             device: Arc::new(device),
             routes,
-            dns_configured,
+            dns_manager,
         })
     }
 
@@ -70,22 +79,13 @@ impl NetworkAdapter {
 
     pub fn apply(&mut self, settings: &TunnelNetworkSettings) -> Result<()> {
         self.routes.update(settings)?;
-        if settings.dns_servers.is_empty() {
-            if self.dns_configured {
-                revert_dns();
-            }
-            self.dns_configured = false;
-        } else {
-            self.dns_configured = configure_dns(&settings.dns_servers);
-        }
+        self.dns_manager.take();
+        self.dns_manager = DnsManager::start(settings)?;
         Ok(())
     }
 
     pub fn cleanup(&mut self) {
-        if self.dns_configured {
-            revert_dns();
-            self.dns_configured = false;
-        }
+        self.dns_manager.take();
         self.routes.cleanup();
     }
 }
@@ -282,29 +282,4 @@ fn ensure_ip_available() -> Result<()> {
     } else {
         bail!("the Linux `ip` command is required; install iproute2")
     }
-}
-
-fn configure_dns(servers: &[String]) -> bool {
-    if servers.is_empty() {
-        return false;
-    }
-    let mut command = Command::new("resolvectl");
-    command.args(["dns", INTERFACE_NAME]);
-    command.args(servers);
-    let dns = command.output();
-    let domain = Command::new("resolvectl")
-        .args(["domain", INTERFACE_NAME, "~."])
-        .output();
-    let configured = dns.is_ok_and(|output| output.status.success())
-        && domain.is_ok_and(|output| output.status.success());
-    if !configured {
-        tracing::warn!("systemd-resolved is unavailable; tunnel DNS was not installed");
-    }
-    configured
-}
-
-fn revert_dns() {
-    let _ = Command::new("resolvectl")
-        .args(["revert", INTERFACE_NAME])
-        .output();
 }

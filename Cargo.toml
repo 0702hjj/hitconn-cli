@@ -1,6 +1,6 @@
 [package]
 name = "hitconn-cli"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.95"
 description = "Headless HITSZ Connect client and service manager"
@@ -18,7 +18,7 @@ clap = { version = "4.5.54", features = ["derive"] }
 clap_complete = "4.5.65"
 ed25519-dalek = "2.2.0"
 hex = "0.4.3"
-hitconn-core = { git = "https://github.com/YinMo19/hitconn-core.git", rev = "62e2fee58d3d1d070d76881aa514d5b1bbf02b50" }
+hitconn-core = { git = "https://github.com/YinMo19/hitconn-core.git", rev = "e542d17d8644675dea06222eb6ee31f7489cd5ba" }
 libc = "0.2.180"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 rpassword = "7.4.0"
