@@ -45,6 +45,14 @@ for target in "${targets[@]}"; do
   ssh "$ssh_target" mv -f "$remote_path.tmp" "$remote_path"
 done
 
+for target in "${targets[@]}"; do
+  name="hitconn-$target"
+  stable_path="$stable_directory/$name"
+  release_path="../releases/v$version/$name"
+  ssh "$ssh_target" ln -sfn "$release_path" "$stable_path.tmp"
+  ssh "$ssh_target" mv -Tf "$stable_path.tmp" "$stable_path"
+done
+
 scp "$manifest" "$ssh_target:$stable_directory/manifest.json.tmp"
 ssh "$ssh_target" chmod 0644 "$stable_directory/manifest.json.tmp"
 ssh "$ssh_target" mv -f "$stable_directory/manifest.json.tmp" "$stable_directory/manifest.json"

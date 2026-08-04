@@ -40,6 +40,10 @@ manifest last:
 scripts/publish-server.sh arcapi 0.3.0 release-assets manifest.json
 ```
 
+The server publisher updates the four human-facing `/stable/hitconn-*` links
+before replacing `/stable/manifest.json`, so the download page and updater
+switch to the same complete release.
+
 Test `hitconn update check`, each direct artifact URL, and a clean
 `hitconn remote TARGET deploy` before marking the release current. Never upload
 the payload private key, auth token, session state, or generated WebAgent
