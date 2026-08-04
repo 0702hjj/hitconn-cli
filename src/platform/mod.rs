@@ -1,3 +1,4 @@
+pub mod app_session;
 pub mod browser;
 pub mod temporary_trust;
 

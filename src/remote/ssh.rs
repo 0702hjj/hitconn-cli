@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 
@@ -74,6 +74,30 @@ impl Ssh {
         let mut command = vec![CURRENT_BINARY];
         command.extend_from_slice(arguments);
         self.output(&command)
+    }
+
+    pub fn current_input(&self, arguments: &[&str], input: &[u8]) -> Result<Output> {
+        let mut command = vec![CURRENT_BINARY];
+        command.extend_from_slice(arguments);
+        let mut child = self
+            .command(&command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("cannot run ssh")?;
+        child
+            .stdin
+            .take()
+            .context("ssh session has no stdin")?
+            .write_all(input)?;
+        let output = child.wait_with_output()?;
+        if output.status.success() {
+            Ok(output)
+        } else {
+            let message = String::from_utf8_lossy(&output.stderr);
+            bail!("ssh target command failed: {}", message.trim());
+        }
     }
 
     pub fn copy(&self, local: &Path, remote: &str) -> Result<()> {

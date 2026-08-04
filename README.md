@@ -73,7 +73,11 @@ hitconn remote my-server disconnect
 
 On the first `connect`, hitconn inspects the remote OS/architecture, downloads
 the latest signed Linux artifact locally, verifies its size and SHA-256, and
-uploads it atomically under `~/.cache/hitconn`. If authentication is needed, it
+uploads it atomically under `~/.cache/hitconn`. If authentication is needed,
+it first asks an existing local CLI session for a one-time `sidTicket`; on
+macOS it can also use the current HITSZ Connect Keychain session. The ticket is
+sent only on SSH stdin and redeemed into a distinct remote device session, so
+cookies and SIDs are never copied. When no local session is available, hitconn
 allocates a remote TTY and collects the account, password, and optional SMS
 code directly on the target process. No local CLI installation is required on
 the target before the first command.

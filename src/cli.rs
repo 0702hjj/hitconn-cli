@@ -172,7 +172,7 @@ pub enum RemoteAction {
     },
     /// Stop the target tunnel while preserving authentication.
     Disconnect,
-    /// Authenticate on the target terminal, or use the browser fallback.
+    /// Authenticate by local handoff, target terminal, or explicit browser fallback.
     Login {
         /// Authenticate even when the remote session is valid.
         #[arg(long)]
@@ -239,6 +239,7 @@ pub enum RemoteAction {
 pub enum AgentAction {
     Handshake,
     Session,
+    AdoptSession,
     Login { port: u16 },
     Purge,
 }

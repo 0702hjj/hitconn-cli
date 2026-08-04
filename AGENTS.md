@@ -12,11 +12,17 @@ browser-capable orchestrators without gaining tunnel privileges locally.
   `TunnelNetworkSettings` and never reinterpret raw controller policy.
 - Linux owns the TUN device, application of Core-produced routes and DNS,
   systemd lifecycle, journal access, and private on-disk session storage.
-- Terminal authentication is the default on Linux. Read the account from the
-  TTY and use no-echo input for passwords and SMS codes. Zeroize secret input,
-  never put it in arguments/environment/machine protocol/logs, and do not
-  retry rejected credentials automatically. `remote login` must use `ssh -t`
-  so credentials go directly to the target process.
+- Remote authentication first hands off a one-time `sidTicket` from an
+  authenticated local CLI session. On macOS, the existing HITSZ Connect
+  Keychain session is also a permitted source. Send only the bounded ticket on
+  SSH stdin; never copy the persistent local session, cookies, or SID to the
+  target. The target must redeem it into its own device session before saving.
+- Terminal authentication remains the no-browser fallback when no local
+  session is available. Read the account from the TTY and use no-echo input
+  for passwords and SMS codes. Zeroize secret input, never put it in
+  arguments/environment/machine protocol/logs, and do not retry rejected
+  credentials automatically. `remote login` must use `ssh -t` so credentials
+  go directly to the target process.
 - Browser login is an explicit `--fallback`. Trust only the non-CA `127.0.0.1`
   WebAgent leaf in the current user's browser stores. Never install or trust a
   Sangfor root CA. Remote browser fallback uses one SSH session for the

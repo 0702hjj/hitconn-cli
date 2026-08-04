@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Read};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -7,6 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use hitconn_core::Error as CoreError;
 use hitconn_core::auth::{AuthProgress, AuthSession};
 use hitconn_core::web_agent::{LOOPBACK_PORTS, WebAgent};
+use zeroize::Zeroizing;
 
 use crate::auth;
 use crate::cli::AgentAction;
@@ -19,6 +21,7 @@ pub async fn execute(action: AgentAction, paths: &StatePaths) -> Result<()> {
     match action {
         AgentAction::Handshake => handshake(paths),
         AgentAction::Session => session(paths).await,
+        AgentAction::AdoptSession => adopt_session(paths).await,
         AgentAction::Login { port } => login(paths, port).await,
         AgentAction::Purge => purge(paths),
     }
@@ -47,6 +50,30 @@ async fn session(paths: &StatePaths) -> Result<()> {
         Err(error) if authentication_error(&error) => emit_session(false, true),
         Err(error) => Err(error).context("could not validate the saved remote session"),
     }
+}
+
+async fn adopt_session(paths: &StatePaths) -> Result<()> {
+    const MAX_TICKET_BYTES: u64 = 4_096;
+    let mut ticket = Zeroizing::new(String::new());
+    io::stdin()
+        .take(MAX_TICKET_BYTES + 1)
+        .read_to_string(&mut ticket)?;
+    let ticket = ticket.trim();
+    if ticket.is_empty() || ticket.len() as u64 > MAX_TICKET_BYTES {
+        bail!("session handoff ticket is empty or exceeds the local limit");
+    }
+    let mut session = AuthSession::new(auth::gateway_config()?)?;
+    let username = match session.adopt_web_login_ticket(ticket).await? {
+        AuthProgress::Authenticated { username } => username,
+        AuthProgress::SmsCodeRequired(_) => {
+            bail!("session handoff unexpectedly requested SMS verification")
+        }
+    };
+    paths.save_session(&session.snapshot())?;
+    protocol::emit(&AgentEvent::LoginComplete {
+        protocol: protocol::VERSION,
+        username,
+    })
 }
 
 async fn login(paths: &StatePaths, port: u16) -> Result<()> {

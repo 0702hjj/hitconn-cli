@@ -6,6 +6,9 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
+use hitconn_core::Error as CoreError;
+use hitconn_core::auth::AuthSession;
+use zeroize::Zeroizing;
 
 use crate::cli::{RemoteAction, ServiceAction};
 use crate::paths::StatePaths;
@@ -30,7 +33,7 @@ pub async fn execute(target: String, action: RemoteAction, paths: &StatePaths) -
             no_open,
         } => {
             deploy::ensure(&ssh, paths, None, false).await?;
-            authenticate(&ssh, paths, force, fallback, no_open)
+            authenticate(&ssh, paths, force, fallback, no_open).await
         }
         RemoteAction::Logout => current(&ssh, &["logout"], true),
         RemoteAction::Status { watch, json } => {
@@ -85,12 +88,12 @@ async fn connect(
         upgrade || artifact.is_some(),
     )
     .await?;
-    authenticate(ssh, paths, false, fallback, no_open)?;
+    authenticate(ssh, paths, false, fallback, no_open).await?;
     let action = if install { "install" } else { "start" };
     current(ssh, &["service", action], true)
 }
 
-fn authenticate(
+async fn authenticate(
     ssh: &Ssh,
     paths: &StatePaths,
     force: bool,
@@ -112,10 +115,54 @@ fn authenticate(
         }
     }
     if fallback {
-        login::run(ssh, paths, no_open)
-    } else {
-        ssh.current(&["login".to_owned(), "--force".to_owned()], true)
+        return login::run(ssh, paths, no_open);
     }
+    if let Some(ticket) = local_session_ticket(paths).await? {
+        let output = ssh.current_input(&["agent", "adopt-session"], ticket.as_bytes())?;
+        let event: AgentEvent = serde_json::from_slice(&output.stdout)
+            .context("remote session handoff response is invalid")?;
+        let AgentEvent::LoginComplete { protocol, username } = event else {
+            bail!("remote agent returned an unexpected session handoff response");
+        };
+        if protocol != crate::protocol::VERSION {
+            bail!("remote session handoff protocol is incompatible");
+        }
+        println!("Authenticated remote target as {username} using a local session handoff.");
+        return Ok(());
+    }
+    ssh.current(&["login".to_owned(), "--force".to_owned()], true)
+}
+
+async fn local_session_ticket(paths: &StatePaths) -> Result<Option<Zeroizing<String>>> {
+    if paths.session.is_file()
+        && let Some(ticket) = ticket_from_snapshot(paths.load_session()?).await?
+    {
+        return Ok(Some(ticket));
+    }
+    let Some(snapshot) = crate::platform::app_session::load()? else {
+        return Ok(None);
+    };
+    ticket_from_snapshot(snapshot).await
+}
+
+async fn ticket_from_snapshot(
+    snapshot: hitconn_core::auth::AuthSessionSnapshot,
+) -> Result<Option<Zeroizing<String>>> {
+    let mut session = AuthSession::from_snapshot(crate::auth::gateway_config()?, snapshot)?;
+    match session.resume().await {
+        Ok(_) => Ok(Some(Zeroizing::new(
+            session.issue_web_login_ticket().await?,
+        ))),
+        Err(error) if authentication_error(&error) => Ok(None),
+        Err(error) => Err(error).context("could not validate the local handoff session"),
+    }
+}
+
+fn authentication_error(error: &CoreError) -> bool {
+    matches!(error, CoreError::AuthenticationExpired)
+        || error
+            .to_string()
+            .contains("authentication session has expired")
 }
 
 fn doctor(ssh: &Ssh, json: bool) -> Result<()> {
