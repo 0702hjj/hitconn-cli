@@ -168,7 +168,7 @@ hitconn doctor [--json]
 hitconn service install|uninstall|start|restart|stop
 hitconn update check|apply
 hitconn config path|show|set|unset
-hitconn completion <shell>
+hitconn completion <shell> [install]
 
 hitconn remote TARGET connect [--install] [--upgrade] [--artifact PATH] [--fallback [--no-open]]
 hitconn remote TARGET login [--force] [--fallback [--no-open]]
@@ -176,6 +176,14 @@ hitconn remote TARGET disconnect|logout|status|logs|resources|doctor
 hitconn remote TARGET deploy|update [--artifact PATH]
 hitconn remote TARGET service install|uninstall|start|restart|stop
 hitconn remote TARGET purge [--yes]
+```
+
+Print completion for direct evaluation, or install the initialization block
+into `~/.zshrc` once:
+
+```console
+eval "$(hitconn completion zsh)"
+hitconn completion zsh install
 ```
 
 The signed release source is generic and configurable. By default,

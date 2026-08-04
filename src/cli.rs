@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
 #[derive(Debug, Parser)]
@@ -95,8 +95,11 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
-    /// Generate shell completion output.
-    Completion { shell: Shell },
+    /// Generate or install shell completion.
+    Completion {
+        shell: Shell,
+        action: Option<CompletionAction>,
+    },
     /// Operate the same hitconn binary on a Linux target over OpenSSH.
     Remote {
         /// OpenSSH host or alias, including user/host syntax when needed.
@@ -148,6 +151,12 @@ pub enum ConfigAction {
     Set { key: String, value: String },
     /// Restore a supported configuration key to its default.
     Unset { key: String },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CompletionAction {
+    /// Add completion initialization to the shell configuration.
+    Install,
 }
 
 #[derive(Debug, Subcommand)]

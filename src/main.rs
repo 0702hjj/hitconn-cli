@@ -2,6 +2,7 @@ mod agent;
 mod artifact;
 mod auth;
 mod cli;
+mod completion;
 mod config;
 mod daemon;
 mod doctor;
@@ -15,7 +16,7 @@ mod status;
 mod update;
 
 use anyhow::Result;
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use cli::{Cli, Command, DaemonAction};
 use paths::StatePaths;
 
@@ -28,6 +29,9 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    if let Command::Completion { shell, action } = &cli.command {
+        return completion::execute(*shell, *action);
+    }
     let paths = StatePaths::resolve(cli.state_dir)?;
     if let Err(error) = platform::temporary_trust::cleanup_stale(&paths) {
         eprintln!("warning: could not remove stale temporary browser trust: {error:#}");
@@ -67,15 +71,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Doctor { json } => doctor::print(&paths, json),
         Command::Update { action } => update::execute(action, &paths).await,
         Command::Config { action } => config::execute(action, &paths),
-        Command::Completion { shell } => {
-            clap_complete::generate(
-                shell,
-                &mut Cli::command(),
-                "hitconn",
-                &mut std::io::stdout(),
-            );
-            Ok(())
-        }
+        Command::Completion { .. } => unreachable!("completion returned before initialization"),
         Command::Remote { target, action } => remote::execute(target, action, &paths).await,
         Command::Agent { action } => agent::execute(action, &paths).await,
         Command::Daemon {
