@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use hitconn_core::{DnsOverride, TunnelNetworkSettings};
+use socket2::{Domain, Protocol, Socket, Type};
 
 const DNS_PORT: u16 = 53;
 const DNS_WORKERS: usize = 4;
@@ -287,9 +288,17 @@ fn handle_tcp_query(
 fn forward_tcp_query(query: &[u8], upstreams: &[SocketAddr], start: usize) -> Option<Vec<u8>> {
     (0..upstreams.len()).find_map(|offset| {
         let upstream = upstreams[(start + offset) % upstreams.len()];
-        let mut stream = TcpStream::connect_timeout(&upstream, Duration::from_secs(2)).ok()?;
-        bind_to_tunnel(&stream).ok()?;
-        stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+        let socket = Socket::new(
+            Domain::for_address(upstream),
+            Type::STREAM,
+            Some(Protocol::TCP),
+        )
+        .ok()?;
+        bind_to_tunnel(&socket).ok()?;
+        socket
+            .connect_timeout(&upstream.into(), Duration::from_secs(2))
+            .ok()?;
+        let mut stream = TcpStream::from(socket);
         stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
@@ -305,8 +314,8 @@ fn forward_tcp_query(query: &[u8], upstreams: &[SocketAddr], start: usize) -> Op
 
 /// Forces upstream DNS traffic onto the tunnel interface so policy rules from
 /// other local VPN clients cannot hijack or spoof the controller-provided
-/// resolvers. Failure to bind leaves routing untouched and forwarding falls
-/// back to the ambient routing table.
+/// resolvers. Callers abandon an upstream attempt if binding fails rather than
+/// leaking the query onto the ambient routing table.
 fn bind_to_tunnel(socket: &impl AsRawFd) -> std::io::Result<()> {
     let name = CString::new(TUNNEL_INTERFACE)?;
     let result = unsafe {
