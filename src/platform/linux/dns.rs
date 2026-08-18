@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::ffi::CString;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -220,6 +222,7 @@ fn forward_query(query: &[u8], upstreams: &[SocketAddr], start: usize) -> Option
             "[::]:0"
         };
         let socket = UdpSocket::bind(bind).ok()?;
+        bind_to_tunnel(&socket).ok()?;
         socket.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         socket.connect(upstream).ok()?;
         socket.send(query).ok()?;
@@ -285,6 +288,8 @@ fn forward_tcp_query(query: &[u8], upstreams: &[SocketAddr], start: usize) -> Op
     (0..upstreams.len()).find_map(|offset| {
         let upstream = upstreams[(start + offset) % upstreams.len()];
         let mut stream = TcpStream::connect_timeout(&upstream, Duration::from_secs(2)).ok()?;
+        bind_to_tunnel(&stream).ok()?;
+        stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
@@ -296,6 +301,27 @@ fn forward_tcp_query(query: &[u8], upstreams: &[SocketAddr], start: usize) -> Op
         let response = read_tcp_packet(&mut stream)?;
         (response.get(..2) == query.get(..2)).then_some(response)
     })
+}
+
+/// Forces upstream DNS traffic onto the tunnel interface so policy rules from
+/// other local VPN clients cannot hijack or spoof the controller-provided
+/// resolvers. Failure to bind leaves routing untouched and forwarding falls
+/// back to the ambient routing table.
+fn bind_to_tunnel(socket: &impl AsRawFd) -> std::io::Result<()> {
+    let name = CString::new(TUNNEL_INTERFACE)?;
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_BINDTODEVICE,
+            name.as_ptr().cast(),
+            name.as_bytes().len() as libc::socklen_t,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 fn read_tcp_packet(stream: &mut TcpStream) -> Option<Vec<u8>> {
@@ -313,9 +339,11 @@ fn read_tcp_packet(stream: &mut TcpStream) -> Option<Vec<u8>> {
 fn override_response(query: &[u8], overrides: &OverrideCatalog) -> Option<Vec<u8>> {
     let question = parse_question(query)?;
     let entry = overrides.find(&question.domain)?;
-    let addresses = (question.kind == 1 && question.class == 1)
-        .then_some(entry.addresses.as_slice())
-        .unwrap_or_default();
+    let addresses = if question.kind == 1 && question.class == 1 {
+        entry.addresses.as_slice()
+    } else {
+        Default::default()
+    };
     let flags = 0x8080 | (u16::from_be_bytes([query[2], query[3]]) & 0x0100);
     let mut response = Vec::with_capacity(question.end + addresses.len() * 16);
     response.extend_from_slice(&query[..2]);
